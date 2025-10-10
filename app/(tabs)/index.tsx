@@ -1,98 +1,128 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
+import { useRef, useState } from "react";
+import { Alert, Button, Text, View } from "react-native";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function Home() {
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const [uri, setUri] = useState<string | null>(null);
+  const [status, setStatus] = useState("待機中");
 
-export default function HomeScreen() {
+  const API_BASE = "https://whisper-proxy-bcxn.vercel.app"; // Vercelにデプロイした中継APIのベースURL（https必須）
+
+  const start = async () => {
+    try {
+      setStatus("権限確認中…");
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("マイク権限が必要です");
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+      });
+
+      const rec = new Audio.Recording();
+      await rec.prepareToRecordAsync({
+        // Cross‑platform: m4a(AAC) 44.1kHz / 128kbps
+        android: {
+          extension: ".m4a",
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 128000,
+        },
+        ios: {
+          // Use m4a(AAC) instead of CAF/PCM for Whisper互換 & 小さめサイズ
+          extension: ".m4a",
+          audioQuality: Audio.IOSAudioQuality.HIGH,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 128000,
+          // linearPCM系は使わない（CAF/PCMになり容量↑）
+        },
+        web: {
+          // Expo WebはMediaRecorderを利用（参考設定）
+          mimeType: "audio/webm",
+          bitsPerSecond: 128000,
+        },
+      });
+      await rec.startAsync();
+
+      recordingRef.current = rec;
+      setStatus("録音中…");
+    } catch (e: any) {
+      Alert.alert("録音開始エラー", e?.message ?? String(e));
+    }
+  };
+
+  const stop = async () => {
+    try {
+      const rec = recordingRef.current;
+      if (!rec) return;
+      setStatus("停止処理中…");
+      await rec.stopAndUnloadAsync();
+      const localUri = rec.getURI();
+      setUri(localUri ?? null);
+      recordingRef.current = null;
+      setStatus("録音完了");
+    } catch (e: any) {
+      Alert.alert("停止エラー", e?.message ?? String(e));
+    }
+  };
+
+  const play = async () => {
+    try {
+      if (!uri) return;
+      const { sound } = await Audio.Sound.createAsync({ uri });
+      await sound.playAsync();
+    } catch (e: any) {
+      Alert.alert("再生エラー", e?.message ?? String(e));
+    }
+  };
+
+  const upload = async () => {
+    if (!uri) return;
+    try {
+      setStatus("アップロード中…");
+
+      const form = new FormData();
+      form.append("file", {
+        uri,
+        name: `rec_${Date.now()}.m4a`,
+        type: "audio/m4a",
+      } as any);
+
+      const res = await fetch(`${API_BASE}/api/transcribe`, {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(t);
+      }
+      const data = await res.json();
+      setStatus(`文字起こし: ${data.text ?? ""}`);
+    } catch (e: any) {
+      setStatus(`エラー: ${e?.message ?? String(e)}`);
+    }
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
-
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <View style={{ padding: 24, gap: 12 }}>
+      <Text style={{ fontSize: 20, fontWeight: "600" }}>🎙️ 録音テスト</Text>
+      <Button title="▶️ 録音開始" onPress={start} />
+      <Button title="⏹️ 録音停止" onPress={stop} />
+      <Button title="🎧 再生" onPress={play} disabled={!uri} />
+      <Button title="📤 Whisperへ送信" onPress={upload} disabled={!uri} />
+      <Text style={{ marginTop: 8 }}>ステータス：{status}</Text>
+      {uri ? <Text selectable style={{ color: "#555" }}>保存先: {uri}</Text> : null}
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
