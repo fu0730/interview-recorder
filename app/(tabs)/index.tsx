@@ -11,6 +11,26 @@ export default function Home() {
   const [status, setStatus] = useState("待機中");
   const [started, setStarted] = useState(false);
   const [qIndex, setQIndex] = useState(0);
+  const makeFollowup = async (base: string, answer: string) => {
+    setStatus("深掘り生成中…");
+    const r = await fetch(`${API_BASE}/api/followup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base, answer }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    return (d.question as string) || "もう少し具体的に教えてください。";
+  };
+
+  const speakTextAndRecord = async (text: string) => {
+    setStatus("質問を読み上げ中…");
+    await new Promise<void>((resolve) => {
+      Speech.speak(text, { language: "ja-JP", rate: 1.0, onDone: resolve });
+    });
+    setStatus("録音中…（最大90秒）");
+    await start();
+  };
   const speakAndRecord = async () => {
     try {
       const text = BASE_QUESTIONS[qIndex]?.text ?? "";
@@ -128,6 +148,15 @@ export default function Home() {
 
       const data = JSON.parse(res.body);
       setStatus(`文字起こし: ${data.text ?? ""}`);
+      const text = data.text ?? "";
+      const baseQ = BASE_QUESTIONS[qIndex]?.text ?? "";
+      try {
+        const follow = await makeFollowup(baseQ, text);
+        await speakTextAndRecord(follow);
+        setQIndex((i) => Math.min(i + 1, BASE_QUESTIONS.length - 1));
+      } catch (e: any) {
+        setStatus(`フォローアップ生成エラー: ${e.message ?? String(e)}`);
+      }
     } catch (e: any) {
       setStatus(`エラー: ${e?.message ?? String(e)}`);
     }
