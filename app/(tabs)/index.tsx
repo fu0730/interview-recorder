@@ -1,11 +1,30 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
+import * as FileSystem from "expo-file-system";
+import * as Speech from "expo-speech";
 import { useRef, useState } from "react";
 import { Alert, Button, Text, View } from "react-native";
+import { BASE_QUESTIONS } from "../../constants/questions";
 
 export default function Home() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const [uri, setUri] = useState<string | null>(null);
   const [status, setStatus] = useState("待機中");
+  const [started, setStarted] = useState(false);
+  const [qIndex, setQIndex] = useState(0);
+  const speakAndRecord = async () => {
+    try {
+      const text = BASE_QUESTIONS[qIndex]?.text ?? "";
+      if (!text) return;
+      setStatus("質問を読み上げ中…");
+      await new Promise<void>((resolve) => {
+        Speech.speak(text, { language: "ja-JP", rate: 1.0, onDone: resolve });
+      });
+      // 読み上げ後に自動で録音開始
+      await start();
+    } catch (e: any) {
+      Alert.alert("読み上げエラー", e?.message ?? String(e));
+    }
+  };
 
   const API_BASE = "https://whisper-proxy-bcxn.vercel.app"; // Vercelにデプロイした中継APIのベースURL（https必須）
 
@@ -91,23 +110,23 @@ export default function Home() {
     try {
       setStatus("アップロード中…");
 
-      const form = new FormData();
-      form.append("file", {
+      const res = await FileSystem.uploadAsync(
+        `${API_BASE}/api/transcribe`,
         uri,
-        name: `rec_${Date.now()}.m4a`,
-        type: "audio/m4a",
-      } as any);
+        {
+          httpMethod: "POST",
+          // @ts-ignore Expo SDK variations: FileSystemUploadType may be on the default export
+          uploadType: (FileSystem as any).FileSystemUploadType?.MULTIPART ?? 1,
+          fieldName: "file",          // ← サーバ側の formidable の files.file に入る
+          mimeType: "audio/m4a",      // ← 録音設定に合わせる
+        }
+      );
 
-      const res = await fetch(`${API_BASE}/api/transcribe`, {
-        method: "POST",
-        body: form,
-      });
-
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t);
+      if (res.status !== 200) {
+        throw new Error(`HTTP ${res.status}: ${res.body}`);
       }
-      const data = await res.json();
+
+      const data = JSON.parse(res.body);
       setStatus(`文字起こし: ${data.text ?? ""}`);
     } catch (e: any) {
       setStatus(`エラー: ${e?.message ?? String(e)}`);
@@ -117,6 +136,18 @@ export default function Home() {
   return (
     <View style={{ padding: 24, gap: 12 }}>
       <Text style={{ fontSize: 20, fontWeight: "600" }}>🎙️ 録音テスト</Text>
+      {!started ? (
+        <Button
+          title="▶️ インタビュー開始（Q1）"
+          onPress={async () => {
+            setStarted(true);
+            setQIndex(0);
+            await speakAndRecord();
+          }}
+        />
+      ) : (
+        <Text>いまの質問：{BASE_QUESTIONS[qIndex]?.text}</Text>
+      )}
       <Button title="▶️ 録音開始" onPress={start} />
       <Button title="⏹️ 録音停止" onPress={stop} />
       <Button title="🎧 再生" onPress={play} disabled={!uri} />
