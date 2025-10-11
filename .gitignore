@@ -42,3 +42,10 @@ app-example
 /ios
 /android
 whisper-proxy/
+
+# --- allow server folder on Vercel ---
+!whisper-proxy/
+!whisper-proxy/**
+whisper-proxy/node_modules/
+whisper-proxy/.next/
+whisper-proxy/.env.local

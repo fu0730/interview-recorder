@@ -1,0 +1,10 @@
+.next
+node_modules
+.expo
+.env.local
+*.mp3
+# --- allow server folder on Vercel ---
+!whisper-proxy/
+!whisper-proxy/**
+whisper-proxy/node_modules/
+whisper-proxy/.next/
