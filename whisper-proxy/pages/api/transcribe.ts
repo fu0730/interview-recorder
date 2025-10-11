@@ -15,8 +15,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     // 1) multipart を解析（一時保存先を明示）
     const form = formidable({ multiples: false, keepExtensions: true, uploadDir: os.tmpdir() });
-    const { fields, files } = await new Promise<{ fields: formidable.Fields; files: formidable.Files }>((resolve, reject) => {
-      form.parse(req, (err, flds, fls) => (err ? reject(err) : resolve({ fields: flds, files: fls })));
+    const { files } = await new Promise<{ files: formidable.Files }>((resolve, reject) => {
+      form.parse(req, (err, _flds, fls) => (err ? reject(err) : resolve({ files: fls })));
     });
 
     // 2) audio フィールド優先でファイルを取得
@@ -49,7 +49,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 4) Whisper へ転送
     const buffer = await fs.promises.readFile(filePath);
     const fd = new FormData();
-    fd.append('file', new Blob([buffer], { type: 'audio/m4a' }), file.originalFilename || 'audio.m4a');
+    const mime = (file as any).mimetype || 'audio/m4a';
+    const filename = (file.originalFilename || 'audio').replace(/[^A-Za-z0-9_.-]+/g, '_') + (mime.includes('audio/') && !/\.[a-z0-9]+$/i.test(file.originalFilename || '') ? '.m4a' : '');
+    const array = new Uint8Array(buffer);
+    const blob = new Blob([array], { type: mime });
+    fd.append('file', blob, filename || 'audio.m4a');
     fd.append('model', 'whisper-1');
     fd.append('language', 'ja');
 
@@ -61,10 +65,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!resp.ok) {
       const errText = await resp.text();
+      try { await fs.promises.unlink(filePath); } catch {}
       return res.status(resp.status).json({ error: errText });
     }
 
     const jsonResp = await resp.json();
+    try { await fs.promises.unlink(filePath); } catch {}
     return res.status(200).json({ text: jsonResp.text || '' });
   } catch (e: any) {
     console.error('transcribe error', e);
