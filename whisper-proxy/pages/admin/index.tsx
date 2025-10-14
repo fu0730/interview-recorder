@@ -6,19 +6,26 @@ import { getSupabase } from '../../lib/supabase';
 export type SessionRow = { id: string; created_at: string; client_name: string | null; created_by: string | null };
 export type SheetRow = { session_id: string; summary: string | null; strengths: string[] | null; tags: string[] | null };
 
-export const getServerSideProps: GetServerSideProps = async () => {
+export const getServerSideProps: GetServerSideProps = async (ctx) => {
   const supabase = getSupabase();
 
-  // 最新100件のセッション
-  const { data: sessions, error: sErr } = await supabase
+  // クエリパラメータを取得 (?q=顧客名&by=作成者)
+  const q = typeof ctx.query.q === 'string' ? ctx.query.q.trim() : '';
+  const by = typeof ctx.query.by === 'string' ? ctx.query.by.trim() : '';
+
+  let sQuery = supabase
     .from('sessions')
     .select('id, created_at, client_name, created_by')
     .order('created_at', { ascending: false })
     .limit(100);
+
+  if (q) sQuery = sQuery.ilike('client_name', `%${q}%`);
+  if (by) sQuery = sQuery.ilike('created_by', `%${by}%`);
+
+  const { data: sessions, error: sErr } = await sQuery;
   if (sErr) throw sErr;
 
   const ids = (sessions ?? []).map((s) => s.id);
-  // sheets をセッションIDで取得
   const { data: sheets, error: shErr } = await supabase
     .from('sheets')
     .select('session_id, summary, strengths, tags')
@@ -30,17 +37,30 @@ export const getServerSideProps: GetServerSideProps = async () => {
 
   const rows = (sessions ?? []).map((s) => ({ ...s, sheet: sheetMap.get(s.id) || null }));
 
-  return { props: { rows } };
+  return { props: { rows, q, by } };
 };
 
-export default function AdminList({ rows }: { rows: (SessionRow & { sheet: SheetRow | null })[] }) {
+export default function AdminList({ rows, q, by }: { rows: (SessionRow & { sheet: SheetRow | null })[]; q?: string; by?: string }) {
   return (
     <>
-      <Head><title>Admin | Interview Sessions</title></Head>
+      <Head>
+        <title>Admin | Interview Sessions</title>
+      </Head>
       <main style={{ maxWidth: 980, margin: '24px auto', padding: '0 16px', fontFamily: 'ui-sans-serif, system-ui, -apple-system' }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 16 }}>インタビュー一覧（最新100件）</h1>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
           <Link href="/" style={{ textDecoration: 'none', color: '#2F6F5F' }}>← トップへ</Link>
+          <form method="get" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <label style={{ fontSize: 13 }}>顧客名
+              <input name="q" defaultValue={q || ''} placeholder="例: 山田" style={input} />
+            </label>
+            <label style={{ fontSize: 13 }}>作成者
+              <input name="by" defaultValue={by || ''} placeholder="例: fu" style={input} />
+            </label>
+            <button type="submit" style={btn}>検索</button>
+            {(q || by) ? <Link href="/admin" style={{ color: '#666', fontSize: 13 }}>クリア</Link> : null}
+          </form>
         </div>
 
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -73,7 +93,7 @@ export default function AdminList({ rows }: { rows: (SessionRow & { sheet: Sheet
           </tbody>
         </table>
 
-        {rows.length === 0 && <p style={{ marginTop: 16 }}>まだデータがありません。</p>}
+        {rows.length === 0 && <p style={{ marginTop: 16 }}>条件に合致するデータがありません。</p>}
       </main>
     </>
   );
@@ -81,3 +101,5 @@ export default function AdminList({ rows }: { rows: (SessionRow & { sheet: Sheet
 
 const th: React.CSSProperties = { textAlign: 'left', padding: '10px 8px', fontWeight: 700, fontSize: 13, color: '#0f3c2f' };
 const td: React.CSSProperties = { padding: '10px 8px', fontSize: 13, verticalAlign: 'top' };
+const input: React.CSSProperties = { marginLeft: 6, padding: '6px 8px', border: '1px solid #D3EEE5', borderRadius: 6, fontSize: 13 };
+const btn: React.CSSProperties = { padding: '6px 12px', border: '1px solid #2F6F5F', borderRadius: 6, background: '#2F6F5F', color: '#fff', fontSize: 13, cursor: 'pointer' };
