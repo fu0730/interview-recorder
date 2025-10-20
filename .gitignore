@@ -49,3 +49,6 @@ whisper-proxy/
 whisper-proxy/node_modules/
 whisper-proxy/.next/
 whisper-proxy/.env.local
+
+dist/
+*.log
