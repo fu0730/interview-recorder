@@ -1,4 +1,4 @@
-// whisper-proxy/pages/api/ai-generate-sheet.ts
+// server/pages/api/ai-generate-sheet.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 
 // Helper to safely extract and parse JSON from model output
@@ -39,19 +39,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const prompt = `
 あなたは優秀なヒアリングライターです。
-以下のインタビュー回答をもとに、ヒアリングシートをMarkdown形式のJSON構造で作成してください。
-出力はJSONのみで、説明文や補足を付けず、次の構造に従ってください。
+以下のインタビュー回答をもとに、実務で役立つヒアリングシートをJSON形式で作成してください。
+出力はJSONのみで、説明文や補足は不要です。必ず次のスキーマに従ってください。
 
 {
-  "summary": "全体の要約（100文字以内）",
-  "strengths": ["強み1", "強み2"],
+  "summary": "100文字以内の全体要約",
+  "strengths": [
+    { "title": "強みタイトル", "evidence": "根拠となる発言（引用可）", "how_to_use": "活かし方" }
+  ],
   "acquisition": {
     "channels": ["主要チャネル"],
     "issues": ["課題"],
-    "ideas": ["改善アイデア1", "改善アイデア2"]
+    "ideas": [
+      { "what": "改善提案", "why": "理由", "impact": "高/中/低", "effort": "高/中/低" }
+    ]
   },
-  "tags": ["#関連タグ1", "#関連タグ2"]
+  "tags": ["#関連タグ"],
+  "next_actions": ["次の一歩（100字以内）"]
 }
+
+制約:
+- summary は100文字以内。
+- strengths は最大3件。各要素は title/evidence/how_to_use を必須。
+- ideas は最大3件。各要素は what/why/impact/effort を必須。
+- tags は 1〜5 件程度。
+- next_actions は 1〜3 件。
 
 インタビュー回答:
 ${clipped}
@@ -81,16 +93,45 @@ ${clipped}
 
     const json = extractJson(content);
     const summary = typeof json.summary === 'string' ? json.summary : '';
-    const strengths = coerceArray<string>(json.strengths);
-    const acquisitionRaw = json.acquisition || {};
-    const acquisition = {
-      channels: coerceArray<string>(acquisitionRaw.channels),
-      issues: coerceArray<string>(acquisitionRaw.issues),
-      ideas: coerceArray<string>(acquisitionRaw.ideas),
-    };
-    const tags = coerceArray<string>(json.tags);
 
-    res.status(200).json({ summary, strengths, acquisition, tags });
+    // strengths: detailed objects → titles for backward compatibility, plus strengths_detail
+    const strengthsDetail = coerceArray<any>(json.strengths)
+      .map((s) => ({
+        title: typeof s?.title === 'string' ? s.title : '',
+        evidence: typeof s?.evidence === 'string' ? s.evidence : '',
+        how_to_use: typeof s?.how_to_use === 'string' ? s.how_to_use : ''
+      }))
+      .filter((s) => s.title);
+    const strengths = strengthsDetail.map((s) => s.title);
+
+    // acquisition
+    const acquisitionRaw = json.acquisition || {};
+    const channels = coerceArray<string>(acquisitionRaw.channels);
+    const issues = coerceArray<string>(acquisitionRaw.issues);
+    const ideasDetail = coerceArray<any>(acquisitionRaw.ideas)
+      .map((i) => ({
+        what: typeof i?.what === 'string' ? i.what : '',
+        why: typeof i?.why === 'string' ? i.why : '',
+        impact: typeof i?.impact === 'string' ? i.impact : '',
+        effort: typeof i?.effort === 'string' ? i.effort : ''
+      }))
+      .filter((i) => i.what);
+    // collapse ideas to strings for current client UI
+    const ideas = ideasDetail.map((i) => i.why ? `${i.what}（理由: ${i.why}）` : i.what);
+
+    const tags = coerceArray<string>(json.tags);
+    const next_actions = coerceArray<string>(json.next_actions);
+
+    res.status(200).json({
+      summary,
+      strengths,
+      acquisition: { channels, issues, ideas },
+      tags,
+      next_actions,
+      // detailed fields for future UI updates
+      strengths_detail: strengthsDetail,
+      acquisition_detail: { channels, issues, ideas: ideasDetail }
+    });
   } catch (e: any) {
     console.error("AI sheet generation error:", e);
     res.status(500).json({ error: e.message || "AI sheet generation failed" });

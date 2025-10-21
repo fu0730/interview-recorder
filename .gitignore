@@ -41,14 +41,13 @@ app-example
 # generated native folders
 /ios
 /android
-whisper-proxy/
 
-# --- allow server folder on Vercel ---
-!whisper-proxy/
-!whisper-proxy/**
-whisper-proxy/node_modules/
-whisper-proxy/.next/
-whisper-proxy/.env.local
+# server (Next.js API)
+!server/
+!server/**
+server/node_modules/
+server/.next/
+server/.env.local
 
 dist/
 *.log

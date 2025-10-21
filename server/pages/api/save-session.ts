@@ -1,4 +1,4 @@
-// whisper-proxy/pages/api/save-session.ts
+// server/pages/api/save-session.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 // Types from the app (loose to keep compatibility)

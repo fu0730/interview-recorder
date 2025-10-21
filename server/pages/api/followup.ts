@@ -1,4 +1,4 @@
-// whisper-proxy/pages/api/followup.ts
+// server/pages/api/followup.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

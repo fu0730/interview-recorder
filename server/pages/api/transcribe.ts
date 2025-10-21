@@ -1,4 +1,4 @@
-// Note: 初回のみ `npm i formidable` を whisper-proxy ディレクトリで実行してください
+// Note: 初回のみ `npm i formidable` を server ディレクトリで実行してください
 import type { NextApiRequest, NextApiResponse } from 'next';
 import formidable, { File as FormidableFile } from 'formidable';
 import fs from 'fs';
