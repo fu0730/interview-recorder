@@ -1,5 +1,5 @@
 {
-  "name": "whisper-proxy",
+  "name": "servery",
   "private": true,
   "scripts": {
     "dev": "next dev",
